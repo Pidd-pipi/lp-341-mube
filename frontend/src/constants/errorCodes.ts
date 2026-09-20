@@ -1,0 +1,9 @@
+export const ErrorCodes = {
+  OK: 0,
+  BAD_REQUEST: 1000,
+  UNAUTHORIZED: 1001,
+  FORBIDDEN: 1002,
+  NOT_FOUND: 1003,
+  CONFLICT: 1004,
+  RATE_LIMITED: 1006,
+} as const;
