@@ -19,9 +19,16 @@ func newTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(&model.User{}, &model.Package{}, &model.PackageItem{}, &model.Examinee{},
-		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.AbnormalMetric{},
+		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.ReportWithdraw{}, &model.AbnormalMetric{},
 		&model.Enterprise{}, &model.GroupOrder{}); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	if err := repository.NewReportWithdrawRepository(db).CreatePendingIndex(); err != nil {
+		t.Fatalf("create withdraw index: %v", err)
+	}
+	// SQLite :memory: 每连接独立，且并发事务需串行化：固定单连接保证内存库共享与 CAS 正确性。
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
 	}
 	return db
 }

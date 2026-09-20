@@ -44,7 +44,7 @@ func main() {
 	if err := os.MkdirAll(cfg.UploadDir, 0o755); err != nil {
 		log.Warn("mkdir upload dir", "error", err)
 	}
-	if err := os.MkdirAll("/app/reports", 0o755); err != nil {
+	if err := os.MkdirAll(cfg.ReportDir, 0o755); err != nil {
 		log.Warn("mkdir reports dir", "error", err)
 	}
 
@@ -55,6 +55,7 @@ func main() {
 	regRepo := repository.NewRegistrationRepository(db)
 	resultRepo := repository.NewExamResultRepository(db)
 	reportRepo := repository.NewReportRepository(db)
+	withdrawRepo := repository.NewReportWithdrawRepository(db)
 	metricRepo := repository.NewAbnormalMetricRepository(db)
 	entRepo := repository.NewEnterpriseRepository(db)
 	orderRepo := repository.NewGroupOrderRepository(db)
@@ -65,6 +66,8 @@ func main() {
 	regSvc := service.NewRegistrationService(regRepo, examineeRepo, pkgRepo, itemRepo, resultRepo, log)
 	resultSvc := service.NewExamResultService(resultRepo, regRepo, metricRepo, log)
 	reportSvc := service.NewReportService(reportRepo, resultRepo, regRepo, log)
+	reportSvc.SetReportDir(cfg.ReportDir)
+	withdrawSvc := service.NewReportWithdrawService(withdrawRepo, reportRepo, log)
 	metricSvc := service.NewAbnormalMetricService(metricRepo, log)
 	entSvc := service.NewEnterpriseService(entRepo, orderRepo, pkgRepo, log)
 	statsSvc := service.NewStatsService(pkgRepo, regRepo, reportRepo, resultRepo, metricRepo, itemRepo, log)
@@ -76,11 +79,12 @@ func main() {
 		Registration: handler.NewRegistrationHandler(regSvc, log),
 		ExamResult:   handler.NewExamResultHandler(resultSvc, log),
 		Report:       handler.NewReportHandler(reportSvc, log),
+		Withdraw:     handler.NewReportWithdrawHandler(withdrawSvc, log),
 		Abnormal:     handler.NewAbnormalMetricHandler(metricSvc, log),
 		Enterprise:   handler.NewEnterpriseHandler(entSvc, log),
 		Stats:        handler.NewStatsHandler(statsSvc, log),
 	}
-	r := router.New(cfg, log, h, middleware.NewRateLimiter(cfg.RateLimitPerMin), cfg.UploadDir)
+	r := router.New(cfg, log, h, middleware.NewRateLimiter(cfg.RateLimitPerMin), cfg.UploadDir, cfg.ReportDir)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -101,21 +105,27 @@ func main() {
 	}
 }
 
-// migrateAndSeed 自动迁移并注入种子数据；init.sql 已建表则跳过。
+// migrateAndSeed 自动迁移并注入种子数据；init.sql 已建表则只做增量迁移不重复播种。
 func migrateAndSeed(db *gorm.DB, log *slog.Logger) error {
 	var tableCount int64
 	if err := db.Raw("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='packages'").Scan(&tableCount).Error; err != nil {
 		return err
 	}
-	if tableCount > 0 {
-		return nil
-	}
+	// AutoMigrate 幂等补列/补表（含撤回重签新表 report_withdraws 与 reports 版本链列）。
 	if err := db.AutoMigrate(
 		&model.User{}, &model.Package{}, &model.PackageItem{}, &model.Examinee{},
-		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.AbnormalMetric{},
+		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.ReportWithdraw{},
+		&model.AbnormalMetric{},
 		&model.Enterprise{}, &model.GroupOrder{},
 	); err != nil {
 		return err
+	}
+	// “同一报告仅一份待审批申请”的部分唯一索引（幂等）。
+	if err := repository.NewReportWithdrawRepository(db).CreatePendingIndex(); err != nil {
+		return fmt.Errorf("create withdraw pending index: %w", err)
+	}
+	if tableCount > 0 {
+		return nil
 	}
 	seeds := []struct {
 		phone string

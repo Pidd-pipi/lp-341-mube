@@ -75,7 +75,34 @@ export interface Report {
   follow_up_reminder: string;
   pdf_url: string;
   doctor_id: number;
+  generated_at?: string | null;
+  published_at?: string | null;
+  version_no: number;
+  root_report_id: number;
+  parent_report_id: number;
   examinee?: Examinee;
+}
+
+export interface ReportWithdraw {
+  id: number;
+  report_id: number;
+  applicant_id: number;
+  reason: string;
+  status: string; // pending / approved / rejected
+  reviewer_id: number;
+  review_comment: string;
+  expires_at: string;
+  reviewed_at?: string | null;
+  new_report_id: number;
+  created_at: string;
+  updated_at: string;
+  report?: Report;
+}
+
+export interface VersionChain {
+  root_report_id: number;
+  versions: Report[];
+  withdraws: ReportWithdraw[];
 }
 
 export interface AbnormalMetric {

@@ -85,9 +85,35 @@ CREATE TABLE IF NOT EXISTS reports (
     pdf_url VARCHAR(255) DEFAULT '',
     doctor_id BIGINT DEFAULT 0,
     generated_at TIMESTAMPTZ,
+    version_no BIGINT DEFAULT 1,
+    root_report_id BIGINT DEFAULT 0,
+    parent_report_id BIGINT DEFAULT 0,
+    published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_reports_root ON reports(root_report_id);
+CREATE INDEX IF NOT EXISTS idx_reports_parent ON reports(parent_report_id);
+
+-- 撤回重签申请：同一报告仅允许一份 pending（部分唯一索引）
+CREATE TABLE IF NOT EXISTS report_withdraws (
+    id BIGSERIAL PRIMARY KEY,
+    report_id BIGINT NOT NULL,
+    applicant_id BIGINT NOT NULL,
+    reason TEXT DEFAULT '',
+    status VARCHAR(20) DEFAULT 'pending',
+    reviewer_id BIGINT DEFAULT 0,
+    review_comment VARCHAR(500) DEFAULT '',
+    expires_at TIMESTAMPTZ NOT NULL,
+    reviewed_at TIMESTAMPTZ,
+    new_report_id BIGINT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_withdraw_report ON report_withdraws(report_id);
+CREATE INDEX IF NOT EXISTS idx_withdraw_expires ON report_withdraws(expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_report_withdraw_one_pending
+    ON report_withdraws(report_id) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS abnormal_metrics (
     id BIGSERIAL PRIMARY KEY,

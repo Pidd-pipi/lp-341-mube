@@ -37,6 +37,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       UPLOAD_DIR: /app/uploads
+      REPORT_DIR: /app/reports
     ports:
       - "${BACKEND_PORT:-19941}:8080"
     depends_on:

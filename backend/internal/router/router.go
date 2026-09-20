@@ -19,13 +19,14 @@ type Handlers struct {
 	Registration *handler.RegistrationHandler
 	ExamResult   *handler.ExamResultHandler
 	Report       *handler.ReportHandler
+	Withdraw     *handler.ReportWithdrawHandler
 	Abnormal     *handler.AbnormalMetricHandler
 	Enterprise   *handler.EnterpriseHandler
 	Stats        *handler.StatsHandler
 }
 
 // New 装配 Gin 路由。
-func New(cfg config.Config, log *slog.Logger, h Handlers, limiter *middleware.RateLimiter, uploadDir string) *gin.Engine {
+func New(cfg config.Config, log *slog.Logger, h Handlers, limiter *middleware.RateLimiter, uploadDir string, reportDir string) *gin.Engine {
 	allowOrigins := cfg.CORSOriginsList()
 	if len(allowOrigins) == 0 {
 		allowOrigins = []string{"http://localhost:18941"}
@@ -50,7 +51,7 @@ func New(cfg config.Config, log *slog.Logger, h Handlers, limiter *middleware.Ra
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "ok", "data": gin.H{"status": "up"}})
 	})
 	r.Static("/uploads", uploadDir)
-	r.Static("/reports", "/app/reports")
+	r.Static("/reports", reportDir)
 
 	auth := middleware.AuthRequired(cfg.JWTSecret)
 	rate := limiter.Limit()

@@ -18,17 +18,27 @@ type ReportService struct {
 	repo       *repository.ReportRepository
 	resultRepo *repository.ExamResultRepository
 	regRepo    *repository.RegistrationRepository
+	reportDir  string
 	log        *slog.Logger
 }
 
 // NewReportService 构造报告服务。
 func NewReportService(repo *repository.ReportRepository, resultRepo *repository.ExamResultRepository, regRepo *repository.RegistrationRepository, log *slog.Logger) *ReportService {
-	return &ReportService{repo: repo, resultRepo: resultRepo, regRepo: regRepo, log: log}
+	return &ReportService{repo: repo, resultRepo: resultRepo, regRepo: regRepo, reportDir: "/app/reports", log: log}
 }
+
+// SetReportDir 覆盖 PDF 落盘目录（测试用）。
+func (s *ReportService) SetReportDir(dir string) { s.reportDir = dir }
 
 // DraftOrGet 获取/创建草稿报告。
 func (s *ReportService) DraftOrGet(ctx context.Context, registrationID uint) (*model.Report, error) {
 	if report, err := s.repo.FindByRegistration(registrationID); err == nil {
+		// 撤回审批期间冻结新版本生成。
+		if report.Status == constants.ReportWithdrawing {
+			return nil, util.NewAppError(constants.CodeReportWithdraw, 409,
+				fmt.Sprintf("Report[no=%s] draft failed: %s", report.ReportNo, constants.MsgWithdrawFrozen),
+				errors.New("report withdrawing"))
+		}
 		return report, nil
 	}
 	reg, err := s.regRepo.FindByID(registrationID)
@@ -55,6 +65,12 @@ func (s *ReportService) Generate(ctx context.Context, reportID, doctorID uint, c
 		return nil, util.NotFoundError(constants.MsgReportNotFound, err)
 	}
 	if report.Status != constants.ReportDraft && report.Status != constants.ReportGenerated {
+		// 撤回审批期间冻结新版本生成。
+		if report.Status == constants.ReportWithdrawing {
+			return nil, util.NewAppError(constants.CodeReportWithdraw, 409,
+				fmt.Sprintf("Report[no=%s] generate failed: %s", report.ReportNo, constants.MsgWithdrawFrozen),
+				errors.New("report withdrawing"))
+		}
 		return nil, util.NewAppError(constants.CodeReportStatus, 409, constants.MsgReportStatusInvalid, errors.New("status not draft"))
 	}
 	results, err := s.resultRepo.ListByRegistration(report.RegistrationID)
@@ -93,8 +109,8 @@ func (s *ReportService) Generate(ctx context.Context, reportID, doctorID uint, c
 	if err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PDF_GENERATED, fmt.Errorf("generate pdf: %w", err))
 	}
-	// 保存 PDF（内存落盘到 uploads 目录）
-	if err := savePDF(report.ReportNo, pdfBytes); err != nil {
+	// 保存 PDF（内存落盘到报告目录）
+	if err := savePDF(s.reportDir, report.ReportNo, pdfBytes); err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PDF_GENERATED, fmt.Errorf("save pdf: %w", err))
 	}
 	report.PDFURL = "/reports/" + report.ReportNo + ".pdf"
@@ -131,7 +147,9 @@ func (s *ReportService) Publish(ctx context.Context, reportID uint) (*model.Repo
 	if report.Status != constants.ReportReviewed {
 		return nil, util.NewAppError(constants.CodeReportStatus, 409, constants.MsgReportStatusInvalid, errors.New("status not reviewed"))
 	}
+	now := time.Now()
 	report.Status = constants.ReportPublished
+	report.PublishedAt = &now
 	if err := s.repo.Update(report); err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PUBLISH_FAILED, fmt.Errorf("publish report: %w", err))
 	}
@@ -162,6 +180,12 @@ func (s *ReportService) PDFBytes(ctx context.Context, id uint) ([]byte, error) {
 	if err != nil {
 		return nil, util.NotFoundError(constants.MsgReportNotFound, err)
 	}
+	// 撤回审批期间冻结下载。
+	if report.Status == constants.ReportWithdrawing {
+		return nil, util.NewAppError(constants.CodeReportWithdraw, 409,
+			fmt.Sprintf("Report[no=%s] pdf download failed: %s", report.ReportNo, constants.MsgWithdrawFrozen),
+			errors.New("report withdrawing"))
+	}
 	results, err := s.resultRepo.ListByRegistration(report.RegistrationID)
 	if err != nil {
 		return nil, err
@@ -187,6 +211,6 @@ func reportRows(results []model.ExamResult) []util.PDFRow {
 	return rows
 }
 
-func savePDF(reportNo string, content []byte) error {
-	return util.WriteFile("/app/reports/"+reportNo+".pdf", content)
+func savePDF(dir, reportNo string, content []byte) error {
+	return util.WriteFile(dir+"/"+reportNo+".pdf", content)
 }

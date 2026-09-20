@@ -16,4 +16,5 @@ const (
 	CodeReportStatus    = 1401
 	CodeAbnormalLevel   = 1402
 	CodeRegStatus       = 1403
+	CodeReportWithdraw  = 1404 // 撤回重签冲突：超时/重复/并发审批/审批冻结
 )

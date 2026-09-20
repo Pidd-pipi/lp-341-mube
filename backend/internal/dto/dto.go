@@ -80,6 +80,17 @@ type ReportContentRequest struct {
 	FollowUpReminder string `json:"follow_up_reminder"`
 }
 
+// ReportWithdrawApplyRequest 撤回重签申请请求。
+type ReportWithdrawApplyRequest struct {
+	Reason string `json:"reason" binding:"required,min=2,max=500"`
+}
+
+// ReportWithdrawReviewRequest 撤回申请审批请求（approve=true 批准，否则驳回）。
+type ReportWithdrawReviewRequest struct {
+	Approve bool   `json:"approve"`
+	Comment string `json:"comment" binding:"max=500"`
+}
+
 // EnterpriseRequest 企业请求。
 type EnterpriseRequest struct {
 	Name    string `json:"name" binding:"required,max=100"`
@@ -97,8 +108,8 @@ type GroupOrderRequest struct {
 
 // FollowUpRequest 复查跟踪请求。
 type FollowUpRequest struct {
-	Status  string `json:"status" binding:"required,oneof=pending done"`
-	Advice  string `json:"specialist_advice" binding:"max=500"`
+	Status string `json:"status" binding:"required,oneof=pending done"`
+	Advice string `json:"specialist_advice" binding:"max=500"`
 }
 
 // TokenResponse 令牌响应。

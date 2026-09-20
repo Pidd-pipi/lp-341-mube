@@ -102,6 +102,7 @@ lp-341/
 | DB_PASSWORD | gbcheckup_pwd | 数据库密码 |
 | JWT_SECRET | change_me_to_a_long_random_string | JWT 签名密钥 |
 | APP_CORS_ORIGINS | http://localhost:18941 | CORS 来源白名单（逗号分隔，生产请显式配置，不允许 `*`） |
+| REPORT_DIR | /app/reports | 报告 PDF 落盘目录（撤回重签生成的新版本沿用） |
 | FRONTEND_PORT | 18941 | 前端对外端口 |
 | BACKEND_PORT | 19941 | 后端对外端口 |
 | DB_PORT | 5432 | 数据库对外端口 |
@@ -142,6 +143,12 @@ lp-341/
 | POST | `/api/v1/reports/:id/review` | admin/doctor | 审核报告 |
 | POST | `/api/v1/reports/:id/publish` | admin/doctor | 发布报告 |
 | GET | `/api/v1/reports/:id/pdf` | admin/doctor | 下载报告 PDF |
+| POST | `/api/v1/reports/:id/withdraw` | admin/doctor | 申请撤回重签（发布 24h 内） |
+| GET | `/api/v1/reports/:id/versions` | admin/doctor | 查看报告版本链（含撤回记录） |
+| GET | `/api/v1/reports/withdraws` | admin/doctor | 撤回重签申请列表（审批台，可按状态过滤） |
+| GET | `/api/v1/reports/withdraws/:id` | admin/doctor | 撤回申请详情 |
+| POST | `/api/v1/reports/withdraws/:id/approve` | admin | 批准撤回（原版归档保留，生成待重签草稿版本） |
+| POST | `/api/v1/reports/withdraws/:id/reject` | admin | 驳回撤回（恢复已发布） |
 | GET | `/api/v1/abnormal-metrics` | admin/doctor/examinee | 异常指标列表 |
 | PUT | `/api/v1/abnormal-metrics/:id/follow-up` | admin/doctor/examinee | 异常指标随访 |
 | POST | `/api/v1/enterprises` | admin/front_desk | 创建团检企业 |
@@ -167,10 +174,12 @@ lp-341/
 - 后端：`backend/internal/constants/report.go`（定义）、`backend/internal/model/abnormal_metric.go`（模型）、`backend/internal/service/exam_result_service.go`（比对/猜测等级）、`backend/internal/service/abnormal_metric_service.go`（状态校验）、`backend/internal/util/formatters.go`（中文文案）、`backend/internal/constants/log_templates.go`（日志）、`backend/internal/constants/error_codes.go`（错误码）
 - 前端：`frontend/src/constants/report.ts`（定义）、`frontend/src/components/common/AbnormalTag.tsx`（着色）、`frontend/src/pages/ResultEntry.tsx`（结果判定）、`frontend/src/pages/AbnormalMetricTrack.tsx`（列表）、`frontend/src/pages/Dashboard.tsx`（异常检出统计）、`frontend/src/types/index.ts`（类型）
 
-### ReportStatus（报告状态：draft/generated/reviewed/published）
+### ReportStatus（报告状态：draft/generated/reviewed/published/withdrawing/withdrawn）
 
-- 后端：`backend/internal/constants/report.go`（定义）、`backend/internal/model/report.go`（模型）、`backend/internal/service/report_service.go`（状态机）、`backend/internal/repository/report_repository.go`（按状态查询）、`backend/internal/util/formatters.go`（中文文案）、`backend/internal/constants/log_templates.go`（日志）、`backend/internal/constants/error_codes.go`（错误码）
-- 前端：`frontend/src/constants/report.ts`（定义）、`frontend/src/components/common/ReportStatusBadge.tsx`（徽标）、`frontend/src/pages/ReportManage.tsx`（列表/按钮显隐）、`frontend/src/types/index.ts`（类型）
+- 后端：`backend/internal/constants/report.go`（含撤回申请状态 ReportWithdrawStatus 与 24h 窗口常量）、`backend/internal/model/report.go`（含版本链字段）、`backend/internal/model/report_withdraw.go`（撤回申请模型）、`backend/internal/service/report_service.go`（状态机 + 审批期冻结）、`backend/internal/service/report_withdraw_service.go`（撤回重签闭环状态机）、`backend/internal/repository/report_repository.go`（CAS 状态流转/版本链）、`backend/internal/repository/report_withdraw_repository.go`（唯一待审批约束/审批 CAS）、`backend/internal/util/formatters.go`（中文文案）、`backend/internal/constants/log_templates.go`（日志）、`backend/internal/constants/error_codes.go`（1404 撤回冲突）、`backend/internal/constants/messages.go`（冲突文案）
+- 前端：`frontend/src/constants/report.ts`（定义）、`frontend/src/components/common/ReportStatusBadge.tsx`（徽标）、`frontend/src/pages/ReportManage.tsx`（申请/审批/版本链、按钮显隐）、`frontend/src/api/report.ts`（撤回接口）、`frontend/src/types/index.ts`（类型）
+
+> 撤回重签闭环：已发布报告 24 小时内可申请撤回，同一报告仅一份待审批申请（数据库部分唯一索引 + 事务 CAS 双保险）；审批期间报告为 `withdrawing`，冻结 PDF 下载、草稿/生成等新版本操作；管理员批准后原版置 `withdrawn` 归档保留并生成待重签草稿版本（版本链 `root_report_id`/`parent_report_id`/`version_no`），驳回则恢复 `published`；超时、重复或并发审批统一返回 HTTP 409（业务码 1404）且状态不变。
 
 ### UserRole（用户角色：admin/doctor/front_desk/examinee）
 

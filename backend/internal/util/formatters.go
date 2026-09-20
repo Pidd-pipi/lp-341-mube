@@ -43,6 +43,24 @@ func ReportStatusText(status string) string {
 		return "已审核"
 	case "published":
 		return "已发布"
+	case "withdrawing":
+		return "撤回审批中"
+	case "withdrawn":
+		return "已撤回（待重签）"
+	default:
+		return "未知"
+	}
+}
+
+// ReportWithdrawStatusText 撤回重签申请状态中文文案。
+func ReportWithdrawStatusText(status string) string {
+	switch status {
+	case "pending":
+		return "待审批"
+	case "approved":
+		return "已批准"
+	case "rejected":
+		return "已驳回"
 	default:
 		return "未知"
 	}

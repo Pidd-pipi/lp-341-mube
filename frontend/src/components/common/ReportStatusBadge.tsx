@@ -8,8 +8,10 @@ interface Props {
 const colorMap: Record<string, string> = {
   [ReportStatus.DRAFT]: 'default',
   [ReportStatus.GENERATED]: 'blue',
-  [ReportStatus.REVIEWED]: 'purple',
   [ReportStatus.PUBLISHED]: 'green',
+  [ReportStatus.REVIEWED]: 'purple',
+  [ReportStatus.WITHDRAWING]: 'orange',
+  [ReportStatus.WITHDRAWN]: 'red',
 };
 
 // 报告状态徽标
