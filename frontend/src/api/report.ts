@@ -1,5 +1,5 @@
 import request from '../utils/request';
-import type { PageData, Report } from '../types';
+import type { PageData, Report, ReportVersionChain, ReportWithdrawRequest } from '../types';
 
 export function listReports(params: { status?: string; page?: number; page_size?: number }): Promise<PageData<Report>> {
   return request.get('/reports', { params });
@@ -27,4 +27,21 @@ export function getReport(id: number): Promise<Report> {
 
 export function reportPDFUrl(id: number): string {
   return `/api/v1/reports/${id}/pdf`;
+}
+
+// 撤回重签闭环
+export function requestWithdraw(id: number, reason: string): Promise<ReportWithdrawRequest> {
+  return request.post(`/reports/${id}/withdraw`, { reason });
+}
+
+export function approveWithdraw(requestId: number, comment?: string): Promise<ReportWithdrawRequest> {
+  return request.post(`/reports/withdrawals/${requestId}/approve`, { comment });
+}
+
+export function rejectWithdraw(requestId: number, comment?: string): Promise<ReportWithdrawRequest> {
+  return request.post(`/reports/withdrawals/${requestId}/reject`, { comment });
+}
+
+export function getVersionChain(id: number): Promise<ReportVersionChain> {
+  return request.get(`/reports/${id}/versions`);
 }

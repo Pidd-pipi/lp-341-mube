@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/blueship581/gbcheckup/internal/constants"
@@ -18,12 +20,13 @@ type ReportService struct {
 	repo       *repository.ReportRepository
 	resultRepo *repository.ExamResultRepository
 	regRepo    *repository.RegistrationRepository
+	reportDir  string
 	log        *slog.Logger
 }
 
 // NewReportService 构造报告服务。
-func NewReportService(repo *repository.ReportRepository, resultRepo *repository.ExamResultRepository, regRepo *repository.RegistrationRepository, log *slog.Logger) *ReportService {
-	return &ReportService{repo: repo, resultRepo: resultRepo, regRepo: regRepo, log: log}
+func NewReportService(repo *repository.ReportRepository, resultRepo *repository.ExamResultRepository, regRepo *repository.RegistrationRepository, reportDir string, log *slog.Logger) *ReportService {
+	return &ReportService{repo: repo, resultRepo: resultRepo, regRepo: regRepo, reportDir: reportDir, log: log}
 }
 
 // DraftOrGet 获取/创建草稿报告。
@@ -54,12 +57,23 @@ func (s *ReportService) Generate(ctx context.Context, reportID, doctorID uint, c
 	if err != nil {
 		return nil, util.NotFoundError(constants.MsgReportNotFound, err)
 	}
-	if report.Status != constants.ReportDraft && report.Status != constants.ReportGenerated {
+	// 撤回审批期间冻结新版本生成。
+	if report.Status == constants.ReportWithdrawing {
+		return nil, util.NewAppError(constants.CodeWithdrawConflict, http.StatusConflict, constants.MsgWithdrawFrozen, errors.New("report withdraw in progress"))
+	}
+	if report.Status != constants.ReportDraft && report.Status != constants.ReportGenerated && report.Status != constants.ReportResignPending {
 		return nil, util.NewAppError(constants.CodeReportStatus, 409, constants.MsgReportStatusInvalid, errors.New("status not draft"))
 	}
 	results, err := s.resultRepo.ListByRegistration(report.RegistrationID)
 	if err != nil {
 		return nil, err
+	}
+	examineeName := report.Examinee.Name
+	if examineeName == "" {
+		// 重签新版本未预载体检人时，从登记记录补齐。
+		if reg, regErr := s.regRepo.FindByID(report.RegistrationID); regErr == nil {
+			examineeName = reg.Examinee.Name
+		}
 	}
 	// 汇总结论（缺省生成）
 	if conclusion == "" {
@@ -85,7 +99,7 @@ func (s *ReportService) Generate(ctx context.Context, reportID, doctorID uint, c
 	// 生成 PDF
 	pdfBytes, err := util.GeneratePDF(util.PDFReport{
 		Title:    "体检报告 " + report.ReportNo,
-		SubTitle: fmt.Sprintf("体检人：%s", report.Examinee.Name),
+		SubTitle: fmt.Sprintf("体检人：%s", examineeName),
 		Header:   []string{"项目", "结果", "参考值", "异常"},
 		Rows:     reportRows(results),
 		Footer:   []string{"结论：" + conclusion, "健康建议：" + healthAdvice, fmt.Sprintf("生成时间：%s", util.FormatTime(now))},
@@ -93,8 +107,8 @@ func (s *ReportService) Generate(ctx context.Context, reportID, doctorID uint, c
 	if err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PDF_GENERATED, fmt.Errorf("generate pdf: %w", err))
 	}
-	// 保存 PDF（内存落盘到 uploads 目录）
-	if err := savePDF(report.ReportNo, pdfBytes); err != nil {
+	// 保存 PDF（内存落盘到报告目录）
+	if err := savePDF(s.reportDir, report.ReportNo, pdfBytes); err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PDF_GENERATED, fmt.Errorf("save pdf: %w", err))
 	}
 	report.PDFURL = "/reports/" + report.ReportNo + ".pdf"
@@ -132,6 +146,8 @@ func (s *ReportService) Publish(ctx context.Context, reportID uint) (*model.Repo
 		return nil, util.NewAppError(constants.CodeReportStatus, 409, constants.MsgReportStatusInvalid, errors.New("status not reviewed"))
 	}
 	report.Status = constants.ReportPublished
+	now := time.Now()
+	report.PublishedAt = &now
 	if err := s.repo.Update(report); err != nil {
 		return nil, util.LogError(s.log, constants.LOG_REPORT_PUBLISH_FAILED, fmt.Errorf("publish report: %w", err))
 	}
@@ -162,13 +178,29 @@ func (s *ReportService) PDFBytes(ctx context.Context, id uint) ([]byte, error) {
 	if err != nil {
 		return nil, util.NotFoundError(constants.MsgReportNotFound, err)
 	}
+	// 撤回审批期间冻结下载。
+	if report.Status == constants.ReportWithdrawing {
+		return nil, util.NewAppError(constants.CodeWithdrawConflict, http.StatusConflict, constants.MsgWithdrawFrozen, errors.New("report withdraw in progress"))
+	}
 	results, err := s.resultRepo.ListByRegistration(report.RegistrationID)
 	if err != nil {
 		return nil, err
 	}
+	// 撤回归档（withdrawn）的原版优先返回落盘的历史 PDF，保证原版内容冻结不变。
+	if report.Status == constants.ReportWithdrawn && report.ReportNo != "" {
+		if content, readErr := os.ReadFile(s.reportDir + "/" + report.ReportNo + ".pdf"); readErr == nil {
+			return content, nil
+		}
+	}
+	examineeName := report.Examinee.Name
+	if examineeName == "" {
+		if reg, regErr := s.regRepo.FindByID(report.RegistrationID); regErr == nil {
+			examineeName = reg.Examinee.Name
+		}
+	}
 	return util.GeneratePDF(util.PDFReport{
 		Title:    "体检报告 " + report.ReportNo,
-		SubTitle: fmt.Sprintf("体检人：%s", report.Examinee.Name),
+		SubTitle: fmt.Sprintf("体检人：%s", examineeName),
 		Header:   []string{"项目", "结果", "参考值", "异常"},
 		Rows:     reportRows(results),
 		Footer:   []string{"结论：" + report.Conclusion},
@@ -187,6 +219,6 @@ func reportRows(results []model.ExamResult) []util.PDFRow {
 	return rows
 }
 
-func savePDF(reportNo string, content []byte) error {
-	return util.WriteFile("/app/reports/"+reportNo+".pdf", content)
+func savePDF(dir, reportNo string, content []byte) error {
+	return util.WriteFile(dir+"/"+reportNo+".pdf", content)
 }

@@ -10,6 +10,9 @@ const colorMap: Record<string, string> = {
   [ReportStatus.GENERATED]: 'blue',
   [ReportStatus.REVIEWED]: 'purple',
   [ReportStatus.PUBLISHED]: 'green',
+  [ReportStatus.WITHDRAWING]: 'orange',
+  [ReportStatus.RESIGN_PENDING]: 'gold',
+  [ReportStatus.WITHDRAWN]: 'red',
 };
 
 // 报告状态徽标

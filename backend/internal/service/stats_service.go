@@ -11,13 +11,13 @@ import (
 
 // StatsService 运营统计服务。
 type StatsService struct {
-	pkgRepo     *repository.PackageRepository
-	regRepo     *repository.RegistrationRepository
-	reportRepo  *repository.ReportRepository
-	resultRepo  *repository.ExamResultRepository
-	metricRepo  *repository.AbnormalMetricRepository
-	itemRepo    *repository.PackageItemRepository
-	log         *slog.Logger
+	pkgRepo    *repository.PackageRepository
+	regRepo    *repository.RegistrationRepository
+	reportRepo *repository.ReportRepository
+	resultRepo *repository.ExamResultRepository
+	metricRepo *repository.AbnormalMetricRepository
+	itemRepo   *repository.PackageItemRepository
+	log        *slog.Logger
 }
 
 // NewStatsService 构造统计服务。
@@ -30,7 +30,7 @@ func (s *StatsService) Dashboard(ctx context.Context) (*model.DashboardStats, er
 	stats := &model.DashboardStats{}
 	stats.PackageCount, _ = s.pkgRepo.Count()
 	stats.RegistrationCount, _ = s.regRepo.Count()
-	stats.ReportCount, _ = s.reportRepo.Count()
+	stats.ReportCount, _ = s.reportRepo.CountActive()
 	stats.AbnormalCount, _ = s.metricRepo.Count()
 	revenue, _ := s.regRepo.RevenueByMonth()
 	total := 0.0

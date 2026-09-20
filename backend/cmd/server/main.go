@@ -39,12 +39,16 @@ func main() {
 	if err := migrateAndSeed(db, log); err != nil {
 		panic(fmt.Errorf("migrate database: %w", err))
 	}
+	// 增量演进：对已由 init.sql 建表的库补齐撤回重签闭环所需的列与表。
+	if err := db.AutoMigrate(&model.Report{}, &model.ReportWithdrawRequest{}); err != nil {
+		panic(fmt.Errorf("migrate withdraw models: %w", err))
+	}
 	log.Info(constants.LOG_DB_INITIALIZED)
 
 	if err := os.MkdirAll(cfg.UploadDir, 0o755); err != nil {
 		log.Warn("mkdir upload dir", "error", err)
 	}
-	if err := os.MkdirAll("/app/reports", 0o755); err != nil {
+	if err := os.MkdirAll(cfg.ReportDir, 0o755); err != nil {
 		log.Warn("mkdir reports dir", "error", err)
 	}
 
@@ -55,6 +59,7 @@ func main() {
 	regRepo := repository.NewRegistrationRepository(db)
 	resultRepo := repository.NewExamResultRepository(db)
 	reportRepo := repository.NewReportRepository(db)
+	withdrawRepo := repository.NewReportWithdrawRepository(db)
 	metricRepo := repository.NewAbnormalMetricRepository(db)
 	entRepo := repository.NewEnterpriseRepository(db)
 	orderRepo := repository.NewGroupOrderRepository(db)
@@ -64,23 +69,25 @@ func main() {
 	examineeSvc := service.NewExamineeService(examineeRepo, log)
 	regSvc := service.NewRegistrationService(regRepo, examineeRepo, pkgRepo, itemRepo, resultRepo, log)
 	resultSvc := service.NewExamResultService(resultRepo, regRepo, metricRepo, log)
-	reportSvc := service.NewReportService(reportRepo, resultRepo, regRepo, log)
+	reportSvc := service.NewReportService(reportRepo, resultRepo, regRepo, cfg.ReportDir, log)
+	withdrawSvc := service.NewReportWithdrawService(withdrawRepo, reportRepo, log)
 	metricSvc := service.NewAbnormalMetricService(metricRepo, log)
 	entSvc := service.NewEnterpriseService(entRepo, orderRepo, pkgRepo, log)
 	statsSvc := service.NewStatsService(pkgRepo, regRepo, reportRepo, resultRepo, metricRepo, itemRepo, log)
 
 	h := router.Handlers{
-		User:         handler.NewUserHandler(userSvc, log),
-		Package:      handler.NewPackageHandler(pkgSvc, log),
-		Examinee:     handler.NewExamineeHandler(examineeSvc, log),
-		Registration: handler.NewRegistrationHandler(regSvc, log),
-		ExamResult:   handler.NewExamResultHandler(resultSvc, log),
-		Report:       handler.NewReportHandler(reportSvc, log),
-		Abnormal:     handler.NewAbnormalMetricHandler(metricSvc, log),
-		Enterprise:   handler.NewEnterpriseHandler(entSvc, log),
-		Stats:        handler.NewStatsHandler(statsSvc, log),
+		User:           handler.NewUserHandler(userSvc, log),
+		Package:        handler.NewPackageHandler(pkgSvc, log),
+		Examinee:       handler.NewExamineeHandler(examineeSvc, log),
+		Registration:   handler.NewRegistrationHandler(regSvc, log),
+		ExamResult:     handler.NewExamResultHandler(resultSvc, log),
+		Report:         handler.NewReportHandler(reportSvc, log),
+		ReportWithdraw: handler.NewReportWithdrawHandler(withdrawSvc, log),
+		Abnormal:       handler.NewAbnormalMetricHandler(metricSvc, log),
+		Enterprise:     handler.NewEnterpriseHandler(entSvc, log),
+		Stats:          handler.NewStatsHandler(statsSvc, log),
 	}
-	r := router.New(cfg, log, h, middleware.NewRateLimiter(cfg.RateLimitPerMin), cfg.UploadDir)
+	r := router.New(cfg, log, h, middleware.NewRateLimiter(cfg.RateLimitPerMin), cfg.UploadDir, cfg.ReportDir)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -112,7 +119,7 @@ func migrateAndSeed(db *gorm.DB, log *slog.Logger) error {
 	}
 	if err := db.AutoMigrate(
 		&model.User{}, &model.Package{}, &model.PackageItem{}, &model.Examinee{},
-		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.AbnormalMetric{},
+		&model.Registration{}, &model.ExamResult{}, &model.Report{}, &model.ReportWithdrawRequest{}, &model.AbnormalMetric{},
 		&model.Enterprise{}, &model.GroupOrder{},
 	); err != nil {
 		return err

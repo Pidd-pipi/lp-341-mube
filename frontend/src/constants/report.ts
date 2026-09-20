@@ -16,6 +16,9 @@ export const ReportStatus = {
   GENERATED: 'generated',
   REVIEWED: 'reviewed',
   PUBLISHED: 'published',
+  WITHDRAWING: 'withdrawing',
+  RESIGN_PENDING: 'resign_pending',
+  WITHDRAWN: 'withdrawn',
 } as const;
 
 export const ReportStatusLabels: Record<string, string> = {
@@ -23,7 +26,25 @@ export const ReportStatusLabels: Record<string, string> = {
   [ReportStatus.GENERATED]: '已生成',
   [ReportStatus.REVIEWED]: '已审核',
   [ReportStatus.PUBLISHED]: '已发布',
+  [ReportStatus.WITHDRAWING]: '撤回审批中',
+  [ReportStatus.RESIGN_PENDING]: '待重签',
+  [ReportStatus.WITHDRAWN]: '已撤回',
 };
+
+export const WithdrawStatus = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+
+export const WithdrawStatusLabels: Record<string, string> = {
+  [WithdrawStatus.PENDING]: '待审批',
+  [WithdrawStatus.APPROVED]: '已批准',
+  [WithdrawStatus.REJECTED]: '已驳回',
+};
+
+// 已发布报告允许申请撤回的时间窗口（小时）
+export const REPORT_WITHDRAW_WINDOW_HOURS = 24;
 
 export const ResultStatusLabels: Record<string, string> = {
   pending: '待录入',

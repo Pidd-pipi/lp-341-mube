@@ -4,6 +4,16 @@
 
 为体检中心提供体检套餐配置、体检结果录入、报告自动生成与解读、异常指标追踪和团检管理的全流程数字化服务。
 
+## 报告撤回重签闭环
+
+- 已发布（published）报告在发布后 **24 小时内** 可申请撤回，超时申请返回 `409/1404` 且状态不变。
+- 同一报告同一时刻只允许 **一份待审批（pending）申请**，重复申请返回冲突。
+- 申请进入审批期间，报告状态变为 **撤回审批中（withdrawing）**，冻结 PDF 下载与新版本生成。
+- 管理员批准：申请置为已批准，原版状态变为 **已撤回（withdrawn）并原样保留**，同时生成 **待重签（resign_pending）** 新版本（版本链 version+1，沿用原结论内容、清空 PDF），新版本走"重新生成 → 审核 → 发布"原流程。
+- 管理员驳回：申请置为已驳回，报告 **恢复已发布（published）**，24 小时窗口内可再次申请。
+- 审批超时、重复审批、并发审批均返回冲突（HTTP 409，code=1404），申请与报告状态保持不变（事务保证，不会产生多余版本）。
+- 报告管理页可发起申请、管理员审批并通过"版本链"抽屉查看全部历史版本与申请记录；原生成、审核、发布流程保持可用。
+
 ## 快速启动（Docker Compose 一键部署，首选）
 
 ```bash
@@ -141,7 +151,11 @@ lp-341/
 | POST | `/api/v1/reports/:id/generate` | admin/doctor | 生成报告与 PDF |
 | POST | `/api/v1/reports/:id/review` | admin/doctor | 审核报告 |
 | POST | `/api/v1/reports/:id/publish` | admin/doctor | 发布报告 |
-| GET | `/api/v1/reports/:id/pdf` | admin/doctor | 下载报告 PDF |
+| GET | `/api/v1/reports/:id/pdf` | admin/doctor | 下载报告 PDF（撤回审批中冻结，返回 409） |
+| POST | `/api/v1/reports/:id/withdraw` | admin/doctor | 已发布报告 24 小时内申请撤回重签 |
+| POST | `/api/v1/reports/withdrawals/:requestId/approve` | admin | 批准撤回：原版归档保留，生成待重签新版本 |
+| POST | `/api/v1/reports/withdrawals/:requestId/reject` | admin | 驳回撤回：报告恢复已发布 |
+| GET | `/api/v1/reports/:id/versions` | admin/doctor | 查看报告版本链与撤回申请记录 |
 | GET | `/api/v1/abnormal-metrics` | admin/doctor/examinee | 异常指标列表 |
 | PUT | `/api/v1/abnormal-metrics/:id/follow-up` | admin/doctor/examinee | 异常指标随访 |
 | POST | `/api/v1/enterprises` | admin/front_desk | 创建团检企业 |
@@ -169,8 +183,8 @@ lp-341/
 
 ### ReportStatus（报告状态：draft/generated/reviewed/published）
 
-- 后端：`backend/internal/constants/report.go`（定义）、`backend/internal/model/report.go`（模型）、`backend/internal/service/report_service.go`（状态机）、`backend/internal/repository/report_repository.go`（按状态查询）、`backend/internal/util/formatters.go`（中文文案）、`backend/internal/constants/log_templates.go`（日志）、`backend/internal/constants/error_codes.go`（错误码）
-- 前端：`frontend/src/constants/report.ts`（定义）、`frontend/src/components/common/ReportStatusBadge.tsx`（徽标）、`frontend/src/pages/ReportManage.tsx`（列表/按钮显隐）、`frontend/src/types/index.ts`（类型）
+- 后端：`backend/internal/constants/report.go`（定义，含 withdrawing/resign_pending/withdrawn 撤回重签状态与 WithdrawStatus）、`backend/internal/model/report.go`（模型与版本链字段）、`backend/internal/model/report_withdraw_request.go`（撤回申请模型）、`backend/internal/service/report_service.go`（状态机与冻结校验）、`backend/internal/service/report_withdraw_service.go`（撤回申请/审批/版本链状态机）、`backend/internal/repository/report_repository.go`（按状态查询、版本链）、`backend/internal/repository/report_withdraw_repository.go`（条件审批防并发）、`backend/internal/util/formatters.go`（中文文案）、`backend/internal/constants/log_templates.go`（日志）、`backend/internal/constants/error_codes.go`（1404 撤回冲突）、`backend/internal/constants/messages.go`（文案）
+- 前端：`frontend/src/constants/report.ts`（定义）、`frontend/src/components/common/ReportStatusBadge.tsx`（徽标）、`frontend/src/pages/ReportManage.tsx`（申请/审批/版本链/按钮显隐）、`frontend/src/api/report.ts`（撤回接口）、`frontend/src/types/index.ts`（类型）、`frontend/src/constants/errorCodes.ts`（1404）
 
 ### UserRole（用户角色：admin/doctor/front_desk/examinee）
 

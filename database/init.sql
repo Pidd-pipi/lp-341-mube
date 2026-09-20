@@ -85,9 +85,37 @@ CREATE TABLE IF NOT EXISTS reports (
     pdf_url VARCHAR(255) DEFAULT '',
     doctor_id BIGINT DEFAULT 0,
     generated_at TIMESTAMPTZ,
+    root_report_id BIGINT DEFAULT 0,
+    parent_report_id BIGINT DEFAULT 0,
+    version INT DEFAULT 1,
+    published_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_report_root ON reports(root_report_id);
+CREATE INDEX IF NOT EXISTS idx_report_parent ON reports(parent_report_id);
+
+-- 报告撤回重签申请（同一报告同一时刻仅一份 pending，由应用事务保证）
+CREATE TABLE IF NOT EXISTS report_withdraw_requests (
+    id BIGSERIAL PRIMARY KEY,
+    report_id BIGINT NOT NULL,
+    applicant_id BIGINT NOT NULL,
+    reason VARCHAR(500) DEFAULT '',
+    status VARCHAR(20) DEFAULT 'pending',
+    reviewer_id BIGINT DEFAULT 0,
+    review_comment VARCHAR(500) DEFAULT '',
+    new_report_id BIGINT DEFAULT 0,
+    expires_at TIMESTAMPTZ NOT NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_withdraw_report ON report_withdraw_requests(report_id);
+CREATE INDEX IF NOT EXISTS idx_withdraw_status ON report_withdraw_requests(status);
+CREATE INDEX IF NOT EXISTS idx_withdraw_expires ON report_withdraw_requests(expires_at);
+-- 同一报告同一时刻最多一份 pending（应用层事务+行锁保证；该部分唯一索引兜底）
+CREATE UNIQUE INDEX IF NOT EXISTS uq_withdraw_pending_per_report
+    ON report_withdraw_requests(report_id) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS abnormal_metrics (
     id BIGSERIAL PRIMARY KEY,

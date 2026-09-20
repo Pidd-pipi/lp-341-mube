@@ -15,7 +15,12 @@ type Report struct {
 	PDFURL           string     `gorm:"size:255" json:"pdf_url"`
 	DoctorID         uint       `json:"doctor_id"`
 	GeneratedAt      *time.Time `json:"generated_at"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	Examinee         Examinee   `gorm:"foreignKey:ExamineeID" json:"examinee,omitempty"`
+	// 版本链：撤回重签时旧版保留，批准后生成新版本。
+	RootReportID   uint       `gorm:"index;default:0" json:"root_report_id"`
+	ParentReportID uint       `gorm:"index;default:0" json:"parent_report_id"`
+	Version        int        `gorm:"default:1" json:"version"`
+	PublishedAt    *time.Time `json:"published_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	Examinee       Examinee   `gorm:"foreignKey:ExamineeID" json:"examinee,omitempty"`
 }

@@ -6,4 +6,5 @@ export const ErrorCodes = {
   NOT_FOUND: 1003,
   CONFLICT: 1004,
   RATE_LIMITED: 1006,
+  WITHDRAW_CONFLICT: 1404,
 } as const;
